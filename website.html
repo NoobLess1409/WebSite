@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Code Editor - Node.js, HTML &amp; CSS</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+  :root {
+    --color-bg: #fff;
+    --color-text: #374151;
+    --color-muted: #6b7280;
+    --color-primary: #111827;
+    --color-primary-hover: #1f2937;
+    --color-accent: #3b82f6;
+    --color-accent-light: #93c5fd;
+    --color-border: #e5e7eb;
+    --radius: 0.75rem;
+    --shadow-light: 0 2px 8px rgb(0 0 0 / 0.05);
+    --font-family: 'Inter', sans-serif;
+    --transition-fast: 0.25s ease;
+    /* Resizable layout default widths and heights */
+    --sidebar-width: 300px;
+    --console-height: 150px;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body, html {
+    margin: 0; padding: 0; height: 100%;
+    font-family: var(--font-family);
+    background: var(--color-bg);
+    color: var(--color-text);
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* Container Layout: header + main panel */
+  .app-container {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    position: sticky;
+    top: 0;
+    background: var(--color-bg);
+    border-bottom: 1px solid var(--color-border);
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 1.75rem;
+    height: 60px;
+    user-select: none;
+  }
+
+  header h1 {
+    font-weight: 700;
+    font-size: 1.6rem;
+    color: var(--color-primary);
+    margin: 0;
+  }
+
+  header button {
+    font-weight: 600;
+    font-size: 0.875rem;
+    background: var(--color-accent);
+    border: none;
+    color: white;
+    padding: 0.4rem 1rem;
+    border-radius: var(--radius);
+    cursor: pointer;
+    user-select: none;
+    transition: background var(--transition-fast);
+  }
+
+  header button:hover,
+  header button:focus {
+    background: var(--color-accent-light);
+    outline: none;
+  }
+
+  main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: var(--sidebar-width) 1fr;
+    grid-template-rows: calc(100% - var(--console-height)) var(--console-height);
+    grid-template-areas:
+      "sidebar editor"
+      "sidebar console";
+    height: calc(100vh - 60px);
+    overflow: hidden;
+    background: var(--color-bg);
+    user-select: none;
+  }
+
+  /* Resizer bars for layout resizing */
+  .resizer {
+    position: relative;
+    background: transparent;
+    z-index: 5;
+  }
+  .resizer:hover,
+  .resizer.active {
+    background: var(--color-accent-light);
+  }
+  .resizer.vertical {
+    grid-row: 1 / 3;
+    grid-column: 1;
+    cursor: col-resize;
+    width: 6px;
+  }
+  .resizer.horizontal {
+    grid-column: 2;
+    grid-row: 1;
+    cursor: row-resize;
+    height: 6px;
+  }
+
+  /* Sidebar (file manager) */
+  .sidebar {
+    grid-area: sidebar;
+    border-right: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    background-color: #f9fafb;
+  }
+
+  .sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--color-border);
+    user-select: none;
+  }
+
+  .sidebar-header h2 {
+    font-weight: 600;
+    font-size: 1.125rem;
+    margin: 0;
+    color: var(--color-primary);
+  }
+
+  .sidebar-header button {
+    background: transparent;
+    border: none;
+    color: var(--color-accent);
+    font-size: 1.2rem;
+    font-weight: 700;
+    cursor: pointer;
+    user-select: none;
+    transition: color var(--transition-fast);
+  }
+
+  .sidebar-header button:hover,
+  .sidebar-header button:focus {
+    color: var(--color-primary-hover);
+    outline: none;
+  }
+
+  .file-tree {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    color: var(--color-muted);
+    user-select: text;
+  }
+
+  .file-tree ul {
+    list-style: none;
+    padding-left: 1rem;
+    margin: 0;
+  }
+
+  .file-tree li {
+    margin: 4px 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    user-select: none;
+    outline: none;
+  }
+
+  .file-tree li.folder > span::before {
+    content: "📁";
+    margin-right: 0.5rem;
+    user-select: none;
+    flex-shrink: 0;
+  }
+
+  .file-tree li.file > span::before {
+    content: "📄";
+    margin-right: 0.5rem;
+    user-select: none;
+    flex-shrink: 0;
+  }
+
+  .file-tree li.open > span::before {
+    content: "📂";
+  }
+
+  /* Folder toggle icon and text label */
+  .file-tree li.folder > span {
+    user-select: none;
+    flex-grow: 1;
+  }
+
+  /* Nested children appear vertically below with a small left indentation */
+  .file-tree ul {
+    padding-left: 1.25rem;
+    border-left: 1px solid transparent;
+  }
+  .file-tree li.open > ul {
+    display: block;
+  }
+  .file-tree ul ul {
+    padding-left: 1.25rem;
+  }
+  .file-tree ul {
+    display: none;
+  }
+  .file-tree li.open > ul {
+    display: block;
+  }
+
+  /* Main editor area */
+  .editor-area {
+    grid-area: editor;
+    display: flex;
+    flex-direction: column;
+    background-color: white;
+  }
+
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--color-border);
+    background: #f3f4f6;
+    padding-left: 1rem;
+  }
+
+  .tab {
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    user-select: none;
+    color: var(--color-muted);
+    border-radius: var(--radius) var(--radius) 0 0;
+    margin-right: 0.5rem;
+    border: 1px solid transparent;
+    border-bottom: none;
+    transition: background var(--transition-fast), color var(--transition-fast);
+    display: flex;
+    align-items: center;
+  }
+
+  .tab.active {
+    background: white;
+    color: var(--color-primary);
+    font-weight: 600;
+    border: 1px solid var(--color-border);
+    border-bottom: none;
+  }
+
+  .tab:hover:not(.active) {
+    background: #e5e7eb;
+  }
+
+  .tab .close-btn {
+    margin-left: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+    user-select: none;
+    color: var(--color-muted);
+    transition: color var(--transition-fast);
+  }
+
+  .tab .close-btn:hover {
+    color: var(--color-accent);
+  }
+
+  .editor-container {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+
+  textarea.code-editor {
+    width: 100%;
+    height: 100%;
+    border: none;
+    resize: none;
+    font-family: 'Fira Mono', monospace, monospace;
+    font-size: 1rem;
+    line-height: 1.5;
+    padding: 1rem;
+    box-sizing: border-box;
+    outline: none;
+    background: white;
+    color: var(--color-primary);
+    user-select: text;
+  }
+
+  /* Console */
+  .console-area {
+    grid-area: console;
+    border-top: 1px solid var(--color-border);
+    background: #111827;
+    color: #d1d5db;
+    font-family: 'Fira Mono', monospace, monospace;
+    font-size: 0.875rem;
+    overflow-y: auto;
+    padding: 0.75rem 1rem;
+    white-space: pre-wrap;
+    user-select: text;
+  }
+
+  .console-area .console-log {
+    color: #9ca3af;
+  }
+
+  .console-area .console-error {
+    color: #f87171;
+  }
+
+  /* Buttons group for file actions */
+  .file-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .file-actions button {
+    background: var(--color-accent);
+    border: none;
+    border-radius: var(--radius);
+    padding: 0.3rem 0.8rem;
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    transition: background var(--transition-fast);
+    font-size: 0.875rem;
+  }
+  .file-actions button:hover,
+  .file-actions button:focus {
+    background: var(--color-accent-light);
+    outline: none;
+  }
+
+  /* Scrollbar styling for sidebar and console */
+  .file-tree::-webkit-scrollbar,
+  .console-area::-webkit-scrollbar {
+    width: 8px;
+  }
+  .file-tree::-webkit-scrollbar-thumb,
+  .console-area::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: var(--radius);
+  }
+  .file-tree::-webkit-scrollbar-track,
+  .console-area::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Responsive tweaks */
+  @media (max-width: 900px) {
+    main {
+      grid-template-columns: 1fr;
+      grid-template-rows: 200px 1fr 250px;
+      grid-template-areas:
+        "sidebar"
+        "editor"
+        "console";
+    }
+    .sidebar {
+      border-right: none;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .editor-area {
+      height: 100%;
+    }
+    /* Overwrite resizers for vertical stacking */
+    .resizer.vertical {
+      display: none;
+    }
+    .resizer.horizontal {
+      grid-column: 1;
+      grid-row: 2;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="app-container" role="main" aria-label="Code editor with file manager and console">
+  <header>
+    <h1 tabindex="0">DevCode Editor</h1>
+    <button id="btnOpenFolder" title="Open folder to manage files">Open Folder</button>
+  </header>
+  <main>
+    <aside class="sidebar" role="region" aria-label="File manager">
+      <div class="sidebar-header">
+        <h2>Files</h2>
+        <div class="file-actions" role="group" aria-label="File actions">
+          <button id="btnAddFolder" title="Add new folder" aria-disabled="true" disabled>➕ Folder</button>
+          <button id="btnAddFile" title="Add new file" aria-disabled="true" disabled>➕ File</button>
+          <button id="btnSaveFile" title="Save current file" aria-disabled="true" disabled>💾 Save</button>
+        </div>
+      </div>
+      <nav class="file-tree" tabindex="0" aria-label="File tree" role="tree"></nav>
+    </aside>
+    <div class="resizer vertical" aria-label="Resize sidebar" tabindex="0" role="separator" aria-orientation="vertical"></div>
+    <section class="editor-area" role="region" aria-label="Code editor area">
+      <nav class="tabs" role="tablist" aria-label="Open files tabs"></nav>
+      <div class="editor-container" tabindex="0">
+        <!-- Editor textarea dynamically shown -->
+      </div>
+    </section>
+    <div class="resizer horizontal" aria-label="Resize console height" tabindex="0" role="separator" aria-orientation="horizontal"></div>
+    <section class="console-area" role="region" aria-label="Console output" tabindex="0"></section>
+  </main>
+</div>
+
+<script>
+  (() => {
+    const btnOpenFolder = document.getElementById('btnOpenFolder');
+    const btnAddFolder = document.getElementById('btnAddFolder');
+    const btnAddFile = document.getElementById('btnAddFile');
+    const btnSaveFile = document.getElementById('btnSaveFile');
+    const fileTreeEl = document.querySelector('.file-tree');
+    const tabsEl = document.querySelector('.tabs');
+    const editorContainer = document.querySelector('.editor-container');
+    const consoleArea = document.querySelector('.console-area');
+    const resizerVertical = document.querySelector('.resizer.vertical');
+    const resizerHorizontal = document.querySelector('.resizer.horizontal');
+    const mainGrid = document.querySelector('main');
+
+    // Fonts for code editor
+    const CODE_FONT = "'Fira Mono', monospace";
+
+    // State
+    let folderHandle = null;
+    let fileHandlesMap = new Map(); // key: path string, value: file handle (file or folder)
+    let fileTree = []; // represents folder structure as objects {name, handle, kind, children}
+    let openFiles = []; // array of {path, name, content, handle}
+    let activeFile = null;
+
+    // Utility: normalize path with /
+    function pathJoin(...parts) {
+      return parts.filter(Boolean).join('/').replace(/\\/g, '/');
+    }
+
+    // Clear console content
+    function clearConsole() {
+      consoleArea.textContent = '';
+    }
+
+    // Append log to console
+    function logToConsole(message, type = 'log') {
+      const div = document.createElement('div');
+      div.textContent = message;
+      div.className = type === 'error' ? 'console-error' : 'console-log';
+      consoleArea.appendChild(div);
+      consoleArea.scrollTop = consoleArea.scrollHeight;
+    }
+
+    // Render file tree in sidebar
+    function renderFileTree() {
+      fileTreeEl.innerHTML = '';
+      if (!fileTree.length) {
+        const p = document.createElement('p');
+        p.textContent = 'No folder opened.';
+        p.style.color = 'var(--color-muted)';
+        fileTreeEl.appendChild(p);
+        return;
+      }
+      const ul = document.createElement('ul');
+      ul.setAttribute('role', 'tree');
+      fileTree.forEach(node => {
+        ul.appendChild(createTreeNode(node));
+      });
+      fileTreeEl.appendChild(ul);
+    }
+
+    // Create a tree node li for folder or file with vertical expand/collapse and indentation
+    function createTreeNode(node) {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'treeitem');
+      li.tabIndex = 0;
+
+      const span = document.createElement('span');
+      span.textContent = node.name;
+
+      if (node.kind === 'directory') {
+        li.className = 'folder';
+        li.setAttribute('aria-expanded', 'false');
+        span.style.userSelect = 'none';
+
+        li.appendChild(span);
+
+        const childrenUl = document.createElement('ul');
+        childrenUl.style.display = 'none';
+
+        if (node.children && node.children.length) {
+          node.children.forEach(child => {
+            childrenUl.appendChild(createTreeNode(child));
+          });
+        }
+        li.appendChild(childrenUl);
+
+        function toggleExpand() {
+          const isExpanded = li.getAttribute('aria-expanded') === 'true';
+          if (isExpanded) {
+            li.setAttribute('aria-expanded', 'false');
+            childrenUl.style.display = 'none';
+            li.classList.remove('open');
+          } else {
+            li.setAttribute('aria-expanded', 'true');
+            childrenUl.style.display = 'block';
+            li.classList.add('open');
+          }
+        }
+
+        span.addEventListener('click', e => {
+          e.stopPropagation();
+          toggleExpand();
+        });
+        li.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggleExpand();
+          }
+        });
+      } else if (node.kind === 'file') {
+        li.className = 'file';
+        li.appendChild(span);
+        li.addEventListener('click', e => {
+          e.stopPropagation();
+          openFile(node);
+        });
+        li.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openFile(node);
+          }
+        });
+      }
+      return li;
+    }
+
+    // Open folder for managing files
+    async function openFolder() {
+      clearConsole();
+      if (!window.showDirectoryPicker) {
+        logToConsole('Error: Your browser does not support the File System Access API needed to open folders. Please use a supported browser like Chrome or Edge.', 'error');
+        return;
+      }
+      try {
+        folderHandle = await window.showDirectoryPicker();
+        if (!folderHandle) {
+          logToConsole('No folder was selected.', 'error');
+          return;
+        }
+        fileHandlesMap.clear();
+        fileTree = [];
+        openFiles = [];
+        activeFile = null;
+        tabsEl.innerHTML = '';
+        editorContainer.innerHTML = '';
+        btnAddFolder.disabled = false;
+        btnAddFolder.setAttribute('aria-disabled', 'false');
+        btnAddFile.disabled = false;
+        btnAddFile.setAttribute('aria-disabled', 'false');
+        btnSaveFile.disabled = true;
+        btnSaveFile.setAttribute('aria-disabled', 'true');
+        await walkDirectory(folderHandle, '');
+        renderFileTree();
+        logToConsole('Folder opened: ' + folderHandle.name);
+        logToConsole('Tip: Use "Add Folder" and "Add File" to create files and folders. Click file names to open and edit.');
+      } catch (e) {
+        console.error(e);
+        logToConsole('Folder open cancelled or failed: ' + e.message, 'error');
+      }
+    }
+
+    // Walk directory recursively and build fileTree structure
+    async function walkDirectory(dirHandle, relativePath) {
+      const node = { name: dirHandle.name, handle: dirHandle, kind: 'directory', children: [] };
+      for await (const entry of dirHandle.values()) {
+        if (entry.kind === 'file') {
+          fileHandlesMap.set(pathJoin(relativePath, entry.name), entry);
+          node.children.push({ name: entry.name, handle: entry, kind: 'file' });
+        } else if (entry.kind === 'directory') {
+          const subdir = await walkDirectory(entry, pathJoin(relativePath, entry.name));
+          node.children.push(subdir);
+        }
+      }
+      fileTree.push(node);
+      return node;
+    }
+
+    // Open file in editor tab
+    async function openFile(node) {
+      const path = getNodePath(node);
+      if (!node || openFiles.find(f => f.path === path)) {
+        // File already opened => activate tab
+        activateTab(path);
+        return;
+      }
+      try {
+        const fileData = await node.handle.getFile();
+        const text = await fileData.text();
+        const newFile = { path, name: node.name, content: text, handle: node.handle, saved: true };
+        openFiles.push(newFile);
+        renderTabs();
+        activateTab(path);
+        btnSaveFile.disabled = true;
+        btnSaveFile.setAttribute('aria-disabled', 'true');
+        logToConsole(\`Opened file: \${path}\`, 'log');
+      } catch (e) {
+        logToConsole(\`Failed to open file: \${e.message}\`, 'error');
+      }
+    }
+
+    // Get path string from node recursively
+    function getNodePath(node, baseNode = null) {
+      if (!node) return '';
+      if (fileTree.includes(node)) return node.name;
+      for (const rootNode of fileTree) {
+        const result = searchPath(rootNode, node);
+        if (result) return result;
+      }
+      function searchPath(currentNode, targetNode, acc=[]) {
+        if (currentNode === targetNode) return acc.concat(currentNode.name).join('/');
+        if (currentNode.kind === 'directory' && currentNode.children && currentNode.children.length) {
+          for (const child of currentNode.children) {
+            const res = searchPath(child, targetNode, acc.concat(currentNode.name));
+            if (res) return res;
+          }
+        }
+        return null;
+      }
+      return null;
+    }
+
+    // Render tabs for open files
+    function renderTabs() {
+      tabsEl.innerHTML = '';
+      openFiles.forEach(file => {
+        const tab = document.createElement('div');
+        tab.className = 'tab' + (file.path === activeFile ? ' active' : '');
+        tab.setAttribute('role', 'tab');
+        tab.setAttribute('aria-selected', file.path === activeFile ? 'true' : 'false');
+        tab.tabIndex = file.path === activeFile ? 0 : -1;
+        tab.textContent = file.name;
+        const closeBtn = document.createElement('span');
+        closeBtn.className = 'close-btn';
+        closeBtn.textContent = '×';
+        closeBtn.setAttribute('role', 'button');
+        closeBtn.setAttribute('aria-label', 'Close ' + file.name);
+        closeBtn.tabIndex = 0;
+        closeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          closeTab(file.path);
+        });
+        closeBtn.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            closeTab(file.path);
+          }
+        });
+        tab.appendChild(closeBtn);
+        tab.addEventListener('click', () => activateTab(file.path));
+        tab.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            activateTab(file.path);
+          }
+        });
+        tabsEl.appendChild(tab);
+      });
+    }
+
+    // Activate tab by path
+    function activateTab(path) {
+      activeFile = path;
+      renderTabs();
+      renderEditor();
+      btnSaveFile.disabled = true;
+      btnSaveFile.setAttribute('aria-disabled', 'true');
+      clearConsole();
+    }
+
+    // Close tab
+    function closeTab(path) {
+      const idx = openFiles.findIndex(f => f.path === path);
+      if (idx === -1) return;
+      openFiles.splice(idx, 1);
+      if (activeFile === path) {
+        if (openFiles.length) {
+          activateTab(openFiles[openFiles.length - 1].path);
+        } else {
+          activeFile = null;
+          editorContainer.innerHTML = '';
+          tabsEl.innerHTML = '';
+          btnSaveFile.disabled = true;
+          btnSaveFile.setAttribute('aria-disabled', 'true');
+          clearConsole();
+        }
+      } else {
+        renderTabs();
+      }
+    }
+
+    // Render code editor for active file
+    function renderEditor() {
+      editorContainer.innerHTML = '';
+      if (!activeFile) return;
+      const file = openFiles.find(f => f.path === activeFile);
+      if (!file) return;
+      const textarea = document.createElement('textarea');
+      textarea.className = 'code-editor';
+      textarea.spellcheck = false;
+      textarea.value = file.content;
+      textarea.setAttribute('aria-label', 'Code editor for '+file.name);
+
+      textarea.addEventListener('input', () => {
+        file.content = textarea.value;
+        file.saved = false;
+        btnSaveFile.disabled = false;
+        btnSaveFile.setAttribute('aria-disabled', 'false');
+      });
+
+      // For Enter key with tab support (insert tab)
+      textarea.addEventListener('keydown', e => {
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          const start = textarea.selectionStart;
+          const end = textarea.selectionEnd;
+          textarea.value = textarea.value.substring(0, start) + '  ' + textarea.value.substring(end);
+          textarea.selectionStart = textarea.selectionEnd = start + 2;
+          textarea.dispatchEvent(new Event('input'));
+        }
+      });
+      editorContainer.appendChild(textarea);
+      textarea.focus();
+    }
+
+    // Add new folder under current folder (File System Access API)
+    async function addFolder() {
+      if (!folderHandle) return;
+      const folderName = prompt('Enter folder name');
+      if (!folderName) return;
+      try {
+        await folderHandle.getDirectoryHandle(folderName, { create: true });
+        fileHandlesMap.clear();
+        fileTree = [];
+        await walkDirectory(folderHandle, '');
+        renderFileTree();
+        logToConsole(\`Folder '\${folderName}' added\`, 'log');
+      } catch (e) {
+        logToConsole(\`Failed to create folder: \${e.message}\`, 'error');
+      }
+    }
+
+    // Add new file under current folder
+    async function addFile() {
+      if (!folderHandle) return;
+      let fileName = prompt('Enter file name with extension (e.g. index.html)');
+      if (!fileName) return;
+      try {
+        const newFileHandle = await folderHandle.getFileHandle(fileName, { create: true });
+        fileHandlesMap.set(fileName, newFileHandle);
+        fileTree = [];
+        await walkDirectory(folderHandle, '');
+        renderFileTree();
+        openFile({ name: fileName, kind: 'file', handle: newFileHandle });
+        logToConsole(\`File '\${fileName}' added and opened\`, 'log');
+      } catch (e) {
+        logToConsole(\`Failed to create file: \${e.message}\`, 'error');
+      }
+    }
+
+    // Save current active file content back to disk
+    async function saveFile() {
+      if (!activeFile) return;
+      const file = openFiles.find(f => f.path === activeFile);
+      if (!file || file.saved) return;
+      try {
+        const writable = await file.handle.createWritable();
+        await writable.write(file.content);
+        await writable.close();
+        file.saved = true;
+        btnSaveFile.disabled = true;
+        btnSaveFile.setAttribute('aria-disabled', 'true');
+        logToConsole(\`File '\${file.name}' saved\`, 'log');
+      } catch (e) {
+        logToConsole(\`Failed to save file: \${e.message}\`, 'error');
+      }
+    }
+
+    // Drag resizing logic for vertical resizer (sidebar width)
+    let isResizingVert = false;
+    resizerVertical.addEventListener('mousedown', startResizeVert);
+    resizerVertical.addEventListener('touchstart', startResizeVert, { passive: true });
+
+    function startResizeVert(e) {
+      isResizingVert = true;
+      document.body.style.userSelect = 'none';
+      resizerVertical.classList.add('active');
+      window.addEventListener('mousemove', resizeVert);
+      window.addEventListener('touchmove', resizeVert, { passive: false });
+      window.addEventListener('mouseup', stopResizeVert);
+      window.addEventListener('touchend', stopResizeVert);
+    }
+
+    function resizeVert(e) {
+      if (!isResizingVert) return;
+      e.preventDefault();
+      // Calculate new sidebar width bounded between 150px and 600px
+      let clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const minWidth = 150;
+      const maxWidth = 600;
+      if (clientX < minWidth) clientX = minWidth;
+      if (clientX > maxWidth) clientX = maxWidth;
+      mainGrid.style.setProperty('--sidebar-width', clientX + 'px');
+    }
+
+    function stopResizeVert() {
+      isResizingVert = false;
+      document.body.style.userSelect = '';
+      resizerVertical.classList.remove('active');
+      window.removeEventListener('mousemove', resizeVert);
+      window.removeEventListener('touchmove', resizeVert);
+      window.removeEventListener('mouseup', stopResizeVert);
+      window.removeEventListener('touchend', stopResizeVert);
+    }
+
+    // Drag resizing logic for horizontal resizer (console height)
+    let isResizingHor = false;
+    resizerHorizontal.addEventListener('mousedown', startResizeHor);
+    resizerHorizontal.addEventListener('touchstart', startResizeHor, { passive: true });
+
+    function startResizeHor(e) {
+      isResizingHor = true;
+      document.body.style.userSelect = 'none';
+      resizerHorizontal.classList.add('active');
+      window.addEventListener('mousemove', resizeHor);
+      window.addEventListener('touchmove', resizeHor, { passive: false });
+      window.addEventListener('mouseup', stopResizeHor);
+      window.addEventListener('touchend', stopResizeHor);
+    }
+
+    function resizeHor(e) {
+      if (!isResizingHor) return;
+      e.preventDefault();
+      // Calculate new console height bounded between 80px and 400px
+      let clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      const mainRect = mainGrid.getBoundingClientRect();
+      let height = mainRect.bottom - clientY;
+      // Clamp height
+      if (height < 80) height = 80;
+      if (height > 400) height = 400;
+      mainGrid.style.setProperty('--console-height', height + 'px');
+    }
+
+    function stopResizeHor() {
+      isResizingHor = false;
+      document.body.style.userSelect = '';
+      resizerHorizontal.classList.remove('active');
+      window.removeEventListener('mousemove', resizeHor);
+      window.removeEventListener('touchmove', resizeHor);
+      window.removeEventListener('mouseup', stopResizeHor);
+      window.removeEventListener('touchend', stopResizeHor);
+    }
+
+    // Event Listeners for buttons
+    btnOpenFolder.addEventListener('click', openFolder);
+    btnAddFolder.addEventListener('click', addFolder);
+    btnAddFile.addEventListener('click', addFile);
+    btnSaveFile.addEventListener('click', saveFile);
+
+    // Initial UI state
+    btnAddFolder.disabled = true;
+    btnAddFolder.setAttribute('aria-disabled', 'true');
+    btnAddFile.disabled = true;
+    btnAddFile.setAttribute('aria-disabled', 'true');
+    btnSaveFile.disabled = true;
+    btnSaveFile.setAttribute('aria-disabled', 'true');
+
+    // Focus management and keyboard shortcuts
+    window.addEventListener('keydown', e => {
+      // Ctrl+S to save active file
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        if (!btnSaveFile.disabled) saveFile();
+      }
+    });
+  })();
+</script>
+</body>
+</html>
+
